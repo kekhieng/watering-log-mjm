@@ -34,7 +34,11 @@
         .total-row { background-color: #2e7d32; color: white; font-weight: bold; }
     </style>
 </head>
+
 <body>
+<div id="offlineSyncStatus" style="position:fixed; top:0; left:0; width:100%; padding:8px; text-align:center; font-size:14px; z-index:10000; display:none; font-weight:bold;">
+    <span id="statusText"></span>
+</div>
 
 <div class="card">
     <div class="selection-group" style="margin-bottom: 15px;padding: 15px; border: 1px solid #cccccc; border-radius: 8px; background: #f2fdf2;">
@@ -107,20 +111,19 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-    // Check if user is already logged in
+// 1. SECURITY CHECK
     const currentUser = localStorage.getItem('loggedInUser');
     if (!currentUser) {
         window.location.href = "index.html"; 
     }
 
+    // 2. CONFIGURATION
     const supabaseUrl = 'https://kmcjfqetnmnuoggofakz.supabase.co';
     const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttY2pmcWV0bm1udW9nZ29mYWt6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MDQzMTgsImV4cCI6MjA4OTE4MDMxOH0.p-t21iaY91hGzekxJos4ClKAwhbQ3uJcMCo-g-PrH14';
     const _supabase = supabase.createClient(supabaseUrl, supabaseKey);
 
     let activeTimers = {};
     let currentPlotPending = "";
-    let totalMinutes = 0;
-
     const cameraInput = document.getElementById('cameraInput');
     const plotData = {
         "BNN": ["B1", "B2", "B3", "B4"],
@@ -128,6 +131,35 @@
         "UNN2": ["N1", "N2", "N3"]
     };
 
+    // --- INITIALIZATION ---
+    function updateSyncUI(count) {
+        const bar = document.getElementById('offlineSyncStatus');
+        const text = document.getElementById('statusText');
+        if (!bar || !text) return;
+        
+        if (count > 0) {
+            bar.style.display = 'block';
+            bar.style.backgroundColor = '#fff3cd'; // Yellow
+            bar.style.color = '#856404';
+            text.innerHTML = `⏳ Offline Mode: ${count} record(s) waiting for signal...`;
+        } else {
+            bar.style.backgroundColor = '#d4edda'; // Green
+            bar.style.color = '#155724';
+            text.innerHTML = `✅ All records uploaded to Supabase!`;
+            setTimeout(() => { bar.style.display = 'none'; }, 3000);
+        }
+    }
+
+    window.onload = function() {
+        const saved = localStorage.getItem('activeWateringSessions');
+        if (saved) {
+            activeTimers = JSON.parse(saved);
+            renderActiveSessions();
+        }
+        syncOfflineData(); 
+    };
+
+    // --- DROPDOWN LOGIC ---
     function syncPlotOptions(locId, plotId) {
         const locValue = document.getElementById(locId).value;
         const plotDropdown = document.getElementById(plotId);
@@ -142,46 +174,48 @@
         }
     }
 
-    // --- BARU: FUNGSI TRIGGER CAMERA ---
+    // --- IMAGE COMPRESSION (Targeting ~500KB) ---
+        function compressImage(file, callback) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+                    
+                    // If the image is huge, shrink it to 1024px width
+                    // This is the biggest factor in file size
+                    const MAX_WIDTH = 1024; 
+                    if (width > MAX_WIDTH) {
+                        height *= MAX_WIDTH / width;
+                        width = MAX_WIDTH;
+                    }
+                    
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    // Quality 0.4 is the "Sweet Spot" for ~300KB - 500KB
+                    // 0.4 means 40% quality, which is still very clear for plot photos
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.4); 
+                    callback(dataUrl);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+    // --- WATERING ACTIONS ---
     function triggerStartCamera() {
         const plot = document.getElementById('plotSelect').value;
         if (!plot) return alert("Please select a Plot No!");
         if (activeTimers[plot]) return alert("Plot is already active!");
-        
         currentPlotPending = plot;
         cameraInput.click();
     }
 
-    // --- HELPER: Image Compression ---
-    function compressImage(file, callback) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            const img = new Image();
-            img.onload = function() {
-                const canvas = document.createElement('canvas');
-                let width = img.width;
-                let height = img.height;
-                const MAX_WIDTH = 1280;
-
-                if (width > MAX_WIDTH) {
-                    height *= MAX_WIDTH / width;
-                    width = MAX_WIDTH;
-                }
-
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-
-                const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-                callback(dataUrl);
-            };
-            img.src = e.target.result;
-        };
-        reader.readAsDataURL(file);
-    }
-
-    // --- 2. START WATERING ---
     cameraInput.onchange = function() {
         if (this.files && this.files.length > 0) {
             const plot = currentPlotPending;
@@ -197,14 +231,12 @@
         }
     };
 
-    // --- 3. END WATERING ---
     function triggerEndCamera(plot) {
         currentPlotPending = plot;
         const endCamera = document.createElement('input');
         endCamera.type = 'file';
         endCamera.accept = 'image/*';
         endCamera.capture = 'camera';
-        
         endCamera.onchange = function() {
             if (this.files && this.files.length > 0) {
                 compressImage(this.files[0], (compressedBase64) => {
@@ -223,98 +255,108 @@
         const startDateObj = new Date(session.startTime);
         const durationMins = parseFloat(((endTime - startDateObj) / (1000 * 60)).toFixed(2));
 
-        const timestamp = Date.now();
-        const startPath = `${timestamp}_${plot}_start.jpg`;
-        const endPath = `${timestamp}_${plot}_end.jpg`;
+        const pendingRecord = {
+            user_email: currentUser,
+            plot_name: plot,
+            start_time: startDateObj.toISOString(),
+            end_time: endTime.toISOString(),
+            duration: durationMins,
+            start_photo_data: session.startPhotoData,
+            end_photo_data: compressedEndBase64,
+            timestamp: Date.now()
+        };
 
-        try {
-            const startBlob = await (await fetch(session.startPhotoData)).blob();
-            const endBlob = await (await fetch(compressedEndBase64)).blob();
+        let queue = JSON.parse(localStorage.getItem('pending_sync_queue') || "[]");
+        queue.push(pendingRecord);
+        localStorage.setItem('pending_sync_queue', JSON.stringify(queue));
 
-            const uploadStart = await _supabase.storage.from('watering-photos').upload(startPath, startBlob);
-            const uploadEnd = await _supabase.storage.from('watering-photos').upload(endPath, endBlob);
-
-            if (uploadStart.error || uploadEnd.error) throw new Error("Gagal muat naik gambar.");
-
-            const startUrl = _supabase.storage.from('watering-photos').getPublicUrl(startPath).data.publicUrl;
-            const endUrl = _supabase.storage.from('watering-photos').getPublicUrl(endPath).data.publicUrl;
-
-            const { error: dbError } = await _supabase.from('watering_logs').insert([{
-                user_email: currentUser,
-                plot_name: plot,
-                start_time: startDateObj.toISOString(),
-                end_time: endTime.toISOString(),
-                duration: durationMins,
-                start_photo_url: startUrl,
-                end_photo_url: endUrl
-            }]);
-
-            if (dbError) throw dbError;
-
-            totalMinutes += durationMins;
-            updateTableUI(currentUser, plot, startUrl, endUrl, durationMins, startDateObj, endTime);
-            
-            delete activeTimers[plot];
-            localStorage.setItem('activeWateringSessions', JSON.stringify(activeTimers));
-            renderActiveSessions();
-            
-        } catch (err) {
-            console.error(err);
-            alert("Database Error: " + err.message);
-        }
+        delete activeTimers[plot];
+        localStorage.setItem('activeWateringSessions', JSON.stringify(activeTimers));
+        renderActiveSessions();
+        syncOfflineData(); 
     }
 
-    async function reportIssue() {
+    // --- ISSUE REPORTING ---
+    function reportIssue() {
         const plot = document.getElementById('issuePlotSelect').value;
         const reason = document.getElementById('reasonDropdown').value;
         if (!plot || !reason) return alert("Please select both a Plot and a Reason!");
 
         const now = new Date().toISOString();
-        try {
-            const { error } = await _supabase.from('watering_logs').insert([{
-                user_email: currentUser,
-                plot_name: plot,
-                start_time: now,
-                end_time: now,
-                duration: 0,
-                issue_reason: reason
-            }]);
-            if (error) throw error;
-            alert("Issue Saved: " + plot + " - " + reason);
-            document.getElementById('issueLocationSelect').value = "";
-            document.getElementById('issuePlotSelect').innerHTML = '<option value="">-- Select Location First --</option>';
-            document.getElementById('reasonDropdown').value = "";
-        } catch (err) {
-            alert("Error: " + err.message);
+        const issueRecord = {
+            user_email: currentUser,
+            plot_name: plot,
+            start_time: now,
+            end_time: now,
+            duration: 0,
+            issue_reason: reason,
+            timestamp: Date.now() 
+        };
+
+        let queue = JSON.parse(localStorage.getItem('pending_sync_queue') || "[]");
+        queue.push(issueRecord);
+        localStorage.setItem('pending_sync_queue', JSON.stringify(queue));
+
+        alert("Issue saved to phone memory!");
+        syncOfflineData(); 
+    }
+
+    // --- SYNC ENGINE ---
+    async function syncOfflineData() {
+        let queue = JSON.parse(localStorage.getItem('pending_sync_queue') || "[]");
+        if (queue.length === 0) {
+            updateSyncUI(0);
+            return;
+        }
+
+        updateSyncUI(queue.length);
+
+        for (let i = 0; i < queue.length; i++) {
+            const item = queue[i];
+            try {
+                let payload = {
+                    user_email: item.user_email,
+                    plot_name: item.plot_name,
+                    start_time: item.start_time,
+                    end_time: item.end_time,
+                    duration: item.duration,
+                    issue_reason: item.issue_reason || null
+                };
+
+                if (item.start_photo_data && item.end_photo_data) {
+                    const ts = item.timestamp || Date.now();
+                    const sPath = `${ts}_${item.plot_name}_S.jpg`;
+                    const ePath = `${ts}_${item.plot_name}_E.jpg`;
+
+                    const sBlob = await (await fetch(item.start_photo_data)).blob();
+                    const eBlob = await (await fetch(item.end_photo_data)).blob();
+
+                    await _supabase.storage.from('watering-photos').upload(sPath, sBlob, { contentType: 'image/jpeg', upsert: true });
+                    await _supabase.storage.from('watering-photos').upload(ePath, eBlob, { contentType: 'image/jpeg', upsert: true });
+
+                    payload.start_photo_url = _supabase.storage.from('watering-photos').getPublicUrl(sPath).data.publicUrl;
+                    payload.end_photo_url = _supabase.storage.from('watering-photos').getPublicUrl(ePath).data.publicUrl;
+                }
+
+                const { error: dbErr } = await _supabase.from('watering_logs').insert([payload]);
+                if (dbErr) throw dbErr;
+
+                queue.splice(i, 1);
+                localStorage.setItem('pending_sync_queue', JSON.stringify(queue));
+                i--; 
+                updateSyncUI(queue.length);
+                
+            } catch (err) {
+                console.error("SYNC ERROR:", err.message);
+                break; 
+            }
         }
     }
 
-    function updateTableUI(user, plot, sUrl, eUrl, dur, sTime, eTime) {
-        const formatTime = (date) => new Date(date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-        const tableBody = document.getElementById('logBody');
-        const row = `<tr>
-            <td>${user}</td>
-            <td><strong>${plot}</strong></td>
-            <td>
-                <div class="thumb-container">
-                    <div class="thumb-item">
-                        <img src="${sUrl}" class="thumbnail" onclick="window.open(this.src)">
-                        <div><span class="time-label">START:</span><br>${formatTime(sTime)}</div>
-                    </div>
-                    <div class="thumb-item">
-                        <img src="${eUrl}" class="thumbnail" onclick="window.open(this.src)">
-                        <div><span class="time-label">END:</span><br>${formatTime(eTime)}</div>
-                    </div>
-                </div>
-            </td>
-            <td><strong>${dur}</strong> min</td>
-        </tr>`;
-        tableBody.insertAdjacentHTML('afterbegin', row);
-        document.getElementById('grandTotal').innerText = totalMinutes.toFixed(2) + " min";
-    }
-
+    // --- UI RENDERING ---
     function renderActiveSessions() {
         const area = document.getElementById('activeSessionsArea');
+        if (!area) return;
         area.innerHTML = '<h4>Plot Sedang Disiram:</h4>';
         const plots = Object.keys(activeTimers);
         if (plots.length === 0) {
@@ -323,20 +365,28 @@
         }
         plots.forEach(plot => {
             area.innerHTML += `
-                <div class="active-session">
+                <div class="active-session" style="background:#f9f9f9; padding:10px; border-radius:8px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; border:1px solid #ddd;">
                     <div><strong>${plot}</strong></div>
-                    <button class="stop-btn-small" onclick="triggerEndCamera('${plot}')">📸 Selesai</button>
+                    <button class="stop-btn-small" onclick="triggerEndCamera('${plot}')" style="background:#e91e63; color:white; border:none; padding:8px 12px; border-radius:5px;">📸 Selesai</button>
                 </div>`;
         });
     }
 
-    window.onload = function() {
-        const saved = localStorage.getItem('activeWateringSessions');
-        if (saved) {
-            activeTimers = JSON.parse(saved);
-            renderActiveSessions();
+    function logout() {
+        const queue = JSON.parse(localStorage.getItem('pending_sync_queue') || "[]");
+        if (queue.length > 0) {
+            if (!confirm("You have " + queue.length + " records not uploaded. Logout anyway?")) return;
         }
-    };
+        localStorage.removeItem('loggedInUser');
+        window.location.href = "index.html";
+    }
+
+    window.addEventListener('online', syncOfflineData);
+    setInterval(() => {
+        let queue = JSON.parse(localStorage.getItem('pending_sync_queue') || "[]");
+        if (queue.length > 0) syncOfflineData();
+    }, 30000);
+
 </script>
 
 <div style="margin-top: 50px; padding: 20px; border-top: 1px solid #ddd; text-align: center;">
@@ -344,6 +394,13 @@
         <a href="records.html" style="text-decoration: none; background: #6c757d; color: white; padding: 12px 20px; border-radius: 8px; font-weight: bold;">📋 Rekod</a>
         <a href="dashboard.html" style="text-decoration: none; background: #007bff; color: white; padding: 12px 20px; border-radius: 8px; font-weight: bold;">📊 Dashboard</a>
     </div>
+</div>
+
+<div style="text-align: center; margin-top: 40px; padding-bottom: 20px;">
+    <hr style="border: 0; border-top: 1px solid #eee; width: 80%; margin: 20px auto;">
+    <button onclick="logout()" style="background: none; border: 1px solid #ccc; color: #070000; padding: 5px 12px; border-radius: 4px; font-size: 12px; cursor: pointer;">
+        Log Keluar
+    </button>
 </div>
 </body>
 </html>
