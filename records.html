@@ -11,7 +11,7 @@
     <meta name="apple-mobile-web-app-title" content="Watering App">
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    
+
     <style>
         :root {
             --primary: #28a745;
@@ -89,6 +89,13 @@
 </div>
 
 <script>
+    // Check if user is already logged in
+    const currentUser = localStorage.getItem('loggedInUser');
+    if (!currentUser) {
+        window.location.href = "index.html"; 
+    }
+ 
+
     // --- Configuration ---
     const supabaseUrl = 'https://kmcjfqetnmnuoggofakz.supabase.co';
     const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttY2pmcWV0bm1udW9nZ29mYWt6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MDQzMTgsImV4cCI6MjA4OTE4MDMxOH0.p-t21iaY91hGzekxJos4ClKAwhbQ3uJcMCo-g-PrH14';

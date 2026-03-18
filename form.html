@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="Watering App">
-    
+
     <style>
         body { font-family: sans-serif; background: #f0f7f4; padding: 15px; margin: 0; }
         .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); max-width: 750px; margin: auto; }
@@ -107,6 +107,12 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+    // Check if user is already logged in
+    const currentUser = localStorage.getItem('loggedInUser');
+    if (!currentUser) {
+        window.location.href = "index.html"; 
+    }
+
     const supabaseUrl = 'https://kmcjfqetnmnuoggofakz.supabase.co';
     const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttY2pmcWV0bm1udW9nZ29mYWt6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MDQzMTgsImV4cCI6MjA4OTE4MDMxOH0.p-t21iaY91hGzekxJos4ClKAwhbQ3uJcMCo-g-PrH14';
     const _supabase = supabase.createClient(supabaseUrl, supabaseKey);
@@ -114,12 +120,6 @@
     let activeTimers = {};
     let currentPlotPending = "";
     let totalMinutes = 0;
-
-    const currentUser = localStorage.getItem('loggedInUser');
-    if (!currentUser) {
-        alert("Please login first!");
-        window.location.href = "home.html";
-    }
 
     const cameraInput = document.getElementById('cameraInput');
     const plotData = {
