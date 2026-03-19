@@ -55,64 +55,94 @@ window.onload = function() {
 };
 
 // --- DATABASE FETCH LOGIC ---
+// Updated Fetch Logic - FIXED PREFIXES
 async function fetchLatestRecords() {
-    // 1. Fetch using 'end_time' to get the latest finished tasks
-    const { data, error } = await _supabase
-        .from('watering_logs')
-        .select('*')
-        .order('end_time', { ascending: false }) 
-        .limit(10);
-
-    if (error) {
-        console.error('Error fetching records:', error);
-        return;
-    }
-
-    const logBody = document.getElementById('logBody');
-    const grandTotalElement = document.getElementById('grandTotal');
+    // Mapping the Tab IDs to the actual first letter of your plots
+    const locMap = { 
+        'BNN': 'B', 
+        'UNN1': 'U', 
+        'UNN2': 'N' 
+    };
     
-    logBody.innerHTML = '';
     let totalMinutes = 0;
 
+    for (const [loc, prefix] of Object.entries(locMap)) {
+        const { data, error } = await _supabase
+            .from('watering_logs')
+            .select('*')
+            // Using the prefix (B, U, or N) instead of the full tab name
+            .ilike('plot_name', `${prefix}%`) 
+            .order('end_time', { ascending: false })
+            .limit(10);
+
+        if (error) {
+            console.error("Fetch error for " + loc, error);
+            continue;
+        }
+
+        const tbody = document.getElementById(`logBody${loc}`);
+        if (!tbody) continue;
+        
+        tbody.innerHTML = '';
+
+        if (!data || data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:20px; color:#ccc; font-size:12px;">Tiada rekod.</td></tr>';
+            continue;
+        }
+
         data.forEach(record => {
-        const row = document.createElement('tr');
-        
-        const dur = parseFloat(record.duration || 0);
-        totalMinutes += dur;
+            const dur = parseFloat(record.duration || 0);
+            totalMinutes += dur; 
+            
+            const timeDone = record.end_time ? new Date(record.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
+            const imgStyle = "width: 35px; height: 35px; object-fit: cover; border-radius: 4px; margin-right: 2px;";
 
-        const timeDone = record.end_time ? new Date(record.end_time).toLocaleTimeString([], { 
-            hour: '2-digit', 
-            minute: '2-digit' 
-        }) : '-';
-
-        // Helper to create small thumbnail HTML if URL exists
-        const imgStyle = "width: 40px; height: 40px; object-fit: cover; border-radius: 4px; border: 1px solid #eee; margin-right: 4px; vertical-align: middle;";
-        
-        const startImg = record.start_photo_url 
-            ? `<img src="${record.start_photo_url}" style="${imgStyle}" onclick="window.open(this.src)" title="Start Photo">` 
-            : '';
-        
-        const endImg = record.end_photo_url 
-            ? `<img src="${record.end_photo_url}" style="${imgStyle}" onclick="window.open(this.src)" title="End Photo">` 
-            : '';
-
-        row.innerHTML = `
-            <td style="padding: 12px; border-bottom: 1px solid #eee;">${record.user_email ? record.user_email.split('@')[0] : 'User'}</td>
-            <td style="padding: 12px; border-bottom: 1px solid #eee;"><strong>${record.plot_name || '-'}</strong></td>
-            <td style="padding: 12px; border-bottom: 1px solid #eee; min-width: 90px;">
-                ${startImg}${endImg}
-            </td>
-            <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right;">
-                <div style="font-weight: bold; color: #28a745;">${dur.toFixed(2)} min</div>
-                <div style="font-size: 11px; color: #999;">Selesai: ${timeDone}</div>
-            </td>
-        `;
-        logBody.appendChild(row);
-    });
-
-    if (grandTotalElement) {
-        grandTotalElement.innerText = totalMinutes.toFixed(2) + ' min';
+            const row = document.createElement('tr');
+            row.style.borderBottom = "1px solid #eee";
+            row.innerHTML = `
+                <td style="padding: 10px;"><strong>${record.plot_name}</strong><br><small style="color:#999">${record.user_email ? record.user_email.split('@')[0] : 'User'}</small></td>
+                <td style="padding: 10px;">
+                    ${record.start_photo_url ? `<img src="${record.start_photo_url}" style="${imgStyle}" onclick="window.open(this.src)">` : ''}
+                    ${record.end_photo_url ? `<img src="${record.end_photo_url}" style="${imgStyle}" onclick="window.open(this.src)">` : ''}
+                </td>
+                <td style="padding: 10px; text-align: right;">
+                    <div style="font-weight: bold; color: #28a745;">${dur.toFixed(2)}m</div>
+                    <div style="font-size: 10px; color: #bbb;">${timeDone}</div>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
     }
+
+    const grandTotal = document.getElementById('grandTotal');
+    if (grandTotal) grandTotal.innerText = totalMinutes.toFixed(2) + ' min';
+}
+
+// 4. NEW: Function to handle the sliding animation for History Tabs
+function showHistoryTab(loc) {
+    const stage = document.getElementById('historyStage');
+    const btns = {
+        'BNN': document.getElementById('tabBtnBNN'),
+        'UNN1': document.getElementById('tabBtnUNN1'),
+        'UNN2': document.getElementById('tabBtnUNN2')
+    };
+
+    // Slide Logic
+    if (loc === 'BNN') stage.style.transform = 'translateX(0%)';
+    if (loc === 'UNN1') stage.style.transform = 'translateX(-33.33%)';
+    if (loc === 'UNN2') stage.style.transform = 'translateX(-66.66%)';
+
+    // Button Styling
+    Object.keys(btns).forEach(key => {
+        if (!btns[key]) return;
+        if (key === loc) {
+            btns[key].style.background = '#28a745';
+            btns[key].style.color = 'white';
+        } else {
+            btns[key].style.background = '#eee';
+            btns[key].style.color = '#666';
+        }
+    });
 }
 
 // --- DROPDOWN LOGIC ---
@@ -186,9 +216,12 @@ function triggerEndCamera(plot) {
     endCamera.type = 'file';
     endCamera.accept = 'image/*';
     endCamera.capture = 'camera';
-    endCamera.onchange = function() {
-        if (this.files && this.files.length > 0) {
-            compressImage(this.files[0], (compressedBase64) => {
+    
+    // Use a direct listener to ensure the plot ID is captured
+    endCamera.onchange = function(event) {
+        const file = event.target.files[0];
+        if (file) {
+            compressImage(file, (compressedBase64) => {
                 finalizeStop(plot, compressedBase64);
             });
         }
@@ -199,7 +232,12 @@ function triggerEndCamera(plot) {
 async function finalizeStop(plot, compressedEndBase64) {
     const endTime = new Date();
     const session = activeTimers[plot];
-    if (!session) return;
+    
+    // Safety check: if plot doesn't exist in memory, stop here
+    if (!session) {
+        alert("Session error for plot " + plot);
+        return;
+    }
 
     const startDateObj = new Date(session.startTime);
     const durationMins = parseFloat(((endTime - startDateObj) / (1000 * 60)).toFixed(2));
@@ -215,13 +253,23 @@ async function finalizeStop(plot, compressedEndBase64) {
         timestamp: Date.now()
     };
 
-    let queue = JSON.parse(localStorage.getItem('pending_sync_queue') || "[]");
+    // 1. Save to the offline queue
+    let queue = [];
+    try {
+        queue = JSON.parse(localStorage.getItem('pending_sync_queue') || "[]");
+    } catch(e) { queue = []; }
+    
     queue.push(pendingRecord);
     localStorage.setItem('pending_sync_queue', JSON.stringify(queue));
 
+    // 2. Remove from active timers IMMEDIATELY
     delete activeTimers[plot];
     localStorage.setItem('activeWateringSessions', JSON.stringify(activeTimers));
+    
+    // 3. Update UI
     renderActiveSessions();
+    
+    // 4. Try to upload
     syncOfflineData(); 
 }
 
@@ -362,6 +410,7 @@ function showTab(tabName) {
         btnWater.style.borderBottom = 'none';
     }
 }
+
 
 function logout() {
     const queue = JSON.parse(localStorage.getItem('pending_sync_queue') || "[]");

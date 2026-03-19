@@ -83,38 +83,40 @@
 
     <div id="activeSessionsArea" style="margin-top: 20px; min-height: 20px; width: 100%;"></div>
 
-    <div style="margin-top: 60px; margin-bottom: 30px; border-top: 2px solid #eee; position: relative; width: 100%;">
+    <div style="margin-top: 60px; margin-bottom: 20px; border-top: 2px solid #eee; position: relative; width: 100%;">
         <span style="position: absolute; top: -11px; left: 50%; transform: translateX(-50%); background: #f4f7f6; padding: 0 20px; color: #aaa; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px;">
-            10 REKOD SEBELUM INI
+            REKOD SEBELUM INI
         </span>
     </div>
-    
-    <div style="width: 100%; padding-bottom: 40px;">
-        <div style="display: flex; align-items: center; margin-bottom: 15px; padding-left: 5px;">
-            <div style="width: 4px; height: 20px; background: #28a745; border-radius: 10px; margin-right: 12px;"></div>
-            <h3 style="margin: 0; font-size: 18px; color: #444; letter-spacing: -0.5px;">Senarai Selesai</h3>
-        </div>
 
-        <div style="overflow-x: auto; background: #ffffff; border-radius: 14px; border: 1px solid #e6e6e6; box-shadow: 0 2px 10px rgba(0,0,0,0.04);">
-            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-                <thead>
-                    <tr style="background: #fafafa; border-bottom: 1px solid #eee;">
-                        <th style="padding: 16px 12px; text-align: left; color: #777; font-weight: 600;">Pekerja</th>
-                        <th style="padding: 16px 12px; text-align: left; color: #777; font-weight: 600;">Plot</th>
-                        <th style="padding: 16px 12px; text-align: left; color: #777; font-weight: 600;">Bukti</th>
-                        <th style="padding: 16px 12px; text-align: left; color: #777; font-weight: 600;">Durasi</th>
-                    </tr>
-                </thead>
-                <tbody id="logBody">
-                    </tbody>
-                <tfoot style="background: #fdfdfd; border-top: 2px solid #f0f0f0;">
-                    <tr style="font-weight: bold;">
-                        <td colspan="3" style="padding: 16px 12px; text-align: right; color: #666;">Jumlah Masa:</td>
-                        <td id="grandTotal" style="padding: 16px 12px; color: #28a745; font-size: 15px;">0.00 min</td>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
+    <div style="display: flex; gap: 5px; margin-bottom: 10px; padding: 0 5px;">
+        <button id="tabBtnBNN" onclick="showHistoryTab('BNN')" style="flex:1; padding: 10px; border: 1px solid #ddd; border-radius: 8px 8px 0 0; background: #28a745; color: white; font-weight: bold; font-size: 12px; cursor: pointer; transition: 0.3s;">BNN</button>
+        <button id="tabBtnUNN1" onclick="showHistoryTab('UNN1')" style="flex:1; padding: 10px; border: 1px solid #ddd; border-radius: 8px 8px 0 0; background: #eee; color: #666; font-weight: bold; font-size: 12px; cursor: pointer; transition: 0.3s;">UNN1</button>
+        <button id="tabBtnUNN2" onclick="showHistoryTab('UNN2')" style="flex:1; padding: 10px; border: 1px solid #ddd; border-radius: 8px 8px 0 0; background: #eee; color: #666; font-weight: bold; font-size: 12px; cursor: pointer; transition: 0.3s;">UNN2</button>
+    </div>
+
+    <div style="width: 100%; overflow: hidden; background: white; border: 1px solid #e0e0e0; border-radius: 0 0 14px 14px; box-shadow: 0 2px 10px rgba(0,0,0,0.04);">
+            <div id="historyStage" style="display: flex; width: 300%; transition: transform 0.4s;">
+                <div style="width: 33.33%; flex-shrink: 0;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tbody id="logBodyBNN"></tbody> </table>
+                </div>
+
+                <div style="width: 33.33%; flex-shrink: 0;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tbody id="logBodyUNN1"></tbody> </table>
+                </div>
+
+                <div style="width: 33.33%; flex-shrink: 0;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tbody id="logBodyUNN2"></tbody> </table>
+                </div>
+            </div>
+    </div>
+    
+    <div style="padding: 15px; text-align: right; background: #fdfdfd; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 14px 14px;">
+        <span style="color: #666; font-weight: bold;">Jumlah Masa (10 Terkini): </span>
+        <span id="grandTotal" style="color: #28a745; font-weight: bold; font-size: 16px;">0.00 min</span>
     </div>
 </div>
 
