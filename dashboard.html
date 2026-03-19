@@ -143,7 +143,8 @@
     }
 
     async function loadData() {
-        const { data, error } = await _supabase.from('watering_logs').select('*').order('start_time', { ascending: false });
+        // CHANGE 1: Order by end_time for consistency
+        const { data, error } = await _supabase.from('watering_logs').select('*').order('end_time', { ascending: false });
         if (error) return console.error(error);
         fullData = data;
         runFilter();
@@ -156,9 +157,17 @@
         const plot = document.getElementById('plotSelect').value;
 
         let filtered = fullData;
-        if (start) filtered = filtered.filter(d => d.start_time >= start + 'T00:00:00');
-        if (end) filtered = filtered.filter(d => d.start_time <= end + 'T23:59:59');
-        if (loc !== "ALL") filtered = filtered.filter(d => d.plot_name.startsWith(loc) || plotData[loc].includes(d.plot_name));
+
+        // CHANGE 2: Filter logic now uses end_time for date range
+        // We use end_time ? end_time : start_time as a fallback for issue reports
+        if (start) {
+            filtered = filtered.filter(d => (d.end_time || d.start_time) >= start + 'T00:00:00');
+        }
+        if (end) {
+            filtered = filtered.filter(d => (d.end_time || d.start_time) <= end + 'T23:59:59');
+        }
+        
+        if (loc !== "ALL") filtered = filtered.filter(d => d.plot_name.startsWith(loc) || (plotData[loc] && plotData[loc].includes(d.plot_name)));
         if (plot !== "ALL") filtered = filtered.filter(d => d.plot_name === plot);
 
         calculateStats(filtered);
@@ -175,7 +184,6 @@
 
         data.forEach(row => {
             const isIssue = row.issue_reason !== null;
-            const isDeep = row.duration >= 50;
             const isPartial = !isIssue && row.duration < 50;
 
             let badgeClass = 'bg-success';
@@ -194,10 +202,10 @@
                 successCount++;
             }
 
-            // --- DATE & TIME FORMATTING (24h) ---
-            const startDate = new Date(row.start_time);
-            const formattedDate = startDate.toLocaleDateString('ms-MY'); // DD/MM/YYYY
-            const formattedTime = startDate.toLocaleTimeString('ms-MY', { 
+            // CHANGE 3: Use end_time for the row display
+            const displayDateObj = row.end_time ? new Date(row.end_time) : new Date(row.start_time);
+            const formattedDate = displayDateObj.toLocaleDateString('ms-MY'); 
+            const formattedTime = displayDateObj.toLocaleTimeString('ms-MY', { 
                 hour12: false, 
                 hour: '2-digit', 
                 minute: '2-digit' 
@@ -205,11 +213,11 @@
 
             tbody.innerHTML += `
                 <tr>
-                    <td>${formattedDate} <br> <small style="color:#666;">${formattedTime}</small></td>
+                    <td style="font-size: 13px;">${formattedDate} <br> <strong style="color:#28a745;">${formattedTime}</strong></td>
                     <td><strong>${row.plot_name}</strong></td>
-                    <td><span class="badge ${badgeClass}">${statusText}</span></td>
-                    <td>${row.duration || 0}</td>
-                    <td style="color:#999; font-size:11px;">${row.user_email}</td>
+                    <td><span class="badge ${badgeClass}" style="font-size:10px; padding: 4px 8px;">${statusText}</span></td>
+                    <td style="font-weight:bold;">${row.duration || 0} <small style="color:#999; font-weight:normal;">min</small></td>
+                    <td style="color:#999; font-size:11px; vertical-align:middle;">${row.user_email ? row.user_email.split('@')[0] : '-'}</td>
                 </tr>`;
         });
 
@@ -218,9 +226,13 @@
         document.getElementById('statTotalIssue').innerText = totalIssueCount;
 
         const breakdownArea = document.getElementById('issueBreakdownArea');
-        breakdownArea.innerHTML = totalIssueCount === 0 ? '<p style="color:#999; font-size:13px;">Tiada isu dikesan.</p>' : '';
+        breakdownArea.innerHTML = totalIssueCount === 0 ? '<p style="color:#999; font-size:13px; text-align:center; padding:10px;">Tiada isu dikesan.</p>' : '';
         Object.keys(issueTypes).forEach(type => {
-            breakdownArea.innerHTML += `<div class="breakdown-item"><div style="font-size:11px; color:#d9534f; font-weight:bold;">${type}</div><div style="font-size:18px; font-weight:bold;">${issueTypes[type]}</div></div>`;
+            breakdownArea.innerHTML += `
+                <div class="breakdown-item" style="border:1px solid #fee; background:#fffafa; border-radius:8px; padding:10px; text-align:center;">
+                    <div style="font-size:11px; color:#d9534f; font-weight:bold; text-transform:uppercase;">${type}</div>
+                    <div style="font-size:20px; font-weight:bold; color:#333;">${issueTypes[type]}</div>
+                </div>`;
         });
     }
 
@@ -228,9 +240,15 @@
         let csv = "Tarikh,Masa,Plot,Status,Durasi,User\n";
         document.querySelectorAll("#dataTable tr").forEach(row => {
             const cells = Array.from(row.querySelectorAll("td"));
-            const dateStr = cells[0].innerText.replace(/\n/g, ",").replace(/ /g, ""); // Splits Date and Time into 2 columns
-            const rest = cells.slice(1).map(c => c.innerText.replace(/,/g, "")).join(",");
-            csv += dateStr + "," + rest + "\n";
+            if(cells.length > 0) {
+                const datePart = cells[0].innerText.split('\n')[0].trim();
+                const timePart = cells[0].innerText.split('\n')[1].trim();
+                const plotPart = cells[1].innerText.replace(/,/g, "");
+                const statusPart = cells[2].innerText.replace(/,/g, "");
+                const durPart = cells[3].innerText.replace(/min/g, "").trim();
+                const userPart = cells[4].innerText.replace(/,/g, "");
+                csv += `${datePart},${timePart},${plotPart},${statusPart},${durPart},${userPart}\n`;
+            }
         });
         const blob = new Blob([csv], { type: 'text/csv' });
         const a = document.createElement('a');

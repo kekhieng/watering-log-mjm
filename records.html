@@ -96,7 +96,6 @@
     if (!currentUser) {
         window.location.href = "index.html"; 
     }
- 
 
     // --- Configuration ---
     const supabaseUrl = 'https://kmcjfqetnmnuoggofakz.supabase.co';
@@ -111,7 +110,8 @@
         const { data, error } = await _supabase
             .from('watering_logs')
             .select('*')
-            .order('start_time', { ascending: false });
+            // CHANGE 1: Order by end_time so latest finished work is first
+            .order('end_time', { ascending: false });
 
         if (error) {
             console.error("Fetch error:", error);
@@ -137,7 +137,11 @@
         }
 
         pageItems.forEach(row => {
-            const dt = new Date(row.start_time);
+            // CHANGE 2: Use end_time for the row display instead of start_time
+            // If end_time is null (for issues), fallback to start_time
+            const displayTime = row.end_time ? row.end_time : row.start_time;
+            const dt = new Date(displayTime);
+            
             const dateStr = dt.toLocaleDateString('ms-MY', { day: '2-digit', month: '2-digit' });
             const timeStr = dt.toLocaleTimeString('ms-MY', { hour12: false, hour: '2-digit', minute: '2-digit' });
 
@@ -161,14 +165,14 @@
             const tr = document.createElement('tr');
             tr.style = rowStyle;
             tr.innerHTML = `
-                <td class="col-time">${dateStr}<br><strong>${timeStr}</strong></td>
+                <td class="col-time" style="font-size: 0.9em;">${dateStr}<br><strong style="color:#28a745;">${timeStr}</strong></td>
                 <td class="col-plot"><strong>${row.plot_name}</strong></td>
                 <td class="col-status">${statusHTML}</td>
-                <td class="col-dur">${row.duration || 0}</td>
+                <td class="col-dur"><strong>${row.duration || 0}</strong><br><small style="color:#999;">min</small></td>
                 <td class="col-pic">
-                    <div class="photo-container">
-                        ${row.start_photo_url ? `<img src="${row.start_photo_url}" class="thumb-mini" title="Gambar Mula" onclick="window.open(this.src)">` : '<span style="color:#ccc">❌</span>'}
-                        ${row.end_photo_url ? `<img src="${row.end_photo_url}" class="thumb-mini" title="Gambar Tamat" onclick="window.open(this.src)">` : '<span style="color:#ccc">❌</span>'}
+                    <div class="photo-container" style="display:flex; gap:4px;">
+                        ${row.start_photo_url ? `<img src="${row.start_photo_url}" class="thumb-mini" style="width:40px; height:40px; object-fit:cover; border-radius:4px;" title="Gambar Mula" onclick="window.open(this.src)">` : '<span style="color:#ccc">❌</span>'}
+                        ${row.end_photo_url ? `<img src="${row.end_photo_url}" class="thumb-mini" style="width:40px; height:40px; object-fit:cover; border-radius:4px;" title="Gambar Tamat" onclick="window.open(this.src)">` : '<span style="color:#ccc">❌</span>'}
                     </div>
                 </td>
             `;
