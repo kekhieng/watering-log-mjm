@@ -34,11 +34,11 @@ function updateSyncUI(count) {
         bar.style.display = 'block';
         bar.style.backgroundColor = '#fff3cd'; // Yellow
         bar.style.color = '#856404';
-        text.innerHTML = `⏳ Offline Mode: ${count} record(s) waiting for signal...`;
+        text.innerHTML = `⏳ Offline: ${count} rekod tunggu signal...`;
     } else {
         bar.style.backgroundColor = '#d4edda'; // Green
         bar.style.color = '#155724';
-        text.innerHTML = `✅ All records uploaded to Supabase!`;
+        text.innerHTML = `✅ Semua rekod berjaya disimpan!`;
         setTimeout(() => { bar.style.display = 'none'; }, 3000);
     }
 }
@@ -216,12 +216,9 @@ function triggerEndCamera(plot) {
     endCamera.type = 'file';
     endCamera.accept = 'image/*';
     endCamera.capture = 'camera';
-    
-    // Use a direct listener to ensure the plot ID is captured
-    endCamera.onchange = function(event) {
-        const file = event.target.files[0];
-        if (file) {
-            compressImage(file, (compressedBase64) => {
+    endCamera.onchange = function() {
+        if (this.files && this.files.length > 0) {
+            compressImage(this.files[0], (compressedBase64) => {
                 finalizeStop(plot, compressedBase64);
             });
         }
@@ -232,12 +229,7 @@ function triggerEndCamera(plot) {
 async function finalizeStop(plot, compressedEndBase64) {
     const endTime = new Date();
     const session = activeTimers[plot];
-    
-    // Safety check: if plot doesn't exist in memory, stop here
-    if (!session) {
-        alert("Session error for plot " + plot);
-        return;
-    }
+    if (!session) return;
 
     const startDateObj = new Date(session.startTime);
     const durationMins = parseFloat(((endTime - startDateObj) / (1000 * 60)).toFixed(2));
@@ -253,23 +245,13 @@ async function finalizeStop(plot, compressedEndBase64) {
         timestamp: Date.now()
     };
 
-    // 1. Save to the offline queue
-    let queue = [];
-    try {
-        queue = JSON.parse(localStorage.getItem('pending_sync_queue') || "[]");
-    } catch(e) { queue = []; }
-    
+    let queue = JSON.parse(localStorage.getItem('pending_sync_queue') || "[]");
     queue.push(pendingRecord);
     localStorage.setItem('pending_sync_queue', JSON.stringify(queue));
 
-    // 2. Remove from active timers IMMEDIATELY
     delete activeTimers[plot];
     localStorage.setItem('activeWateringSessions', JSON.stringify(activeTimers));
-    
-    // 3. Update UI
     renderActiveSessions();
-    
-    // 4. Try to upload
     syncOfflineData(); 
 }
 
@@ -294,7 +276,7 @@ function reportIssue() {
     queue.push(issueRecord);
     localStorage.setItem('pending_sync_queue', JSON.stringify(queue));
 
-    alert("Issue saved to phone memory!");
+    alert("Isu disimpan ke memori telefon!");
     syncOfflineData(); 
 }
 
@@ -411,6 +393,66 @@ function showTab(tabName) {
     }
 }
 
+
+// Updated Fetch Logic
+async function fetchLatestRecords() {
+    // This map ensures "BNN" tab looks for plots starting with "B"
+    const locMap = { 'BNN': 'B', 'UNN1': 'U', 'UNN2': 'N' };
+    let totalMinutes = 0;
+
+    for (const [tabId, prefix] of Object.entries(locMap)) {
+        const { data, error } = await _supabase
+            .from('watering_logs')
+            .select('*')
+            .ilike('plot_name', `${prefix}%`) // This is the fix: prefix (B, U, N)
+            .order('end_time', { ascending: false })
+            .limit(10);
+
+        if (error) {
+            console.error(`Supabase Error for ${tabId}:`, error);
+            continue;
+        }
+
+        const tbody = document.getElementById(`logBody${tabId}`);
+        if (!tbody) continue;
+        
+        tbody.innerHTML = '';
+
+        if (!data || data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:20px; color:#999;">Tiada rekod.</td></tr>';
+            continue;
+        }
+
+        data.forEach(record => {
+            const dur = parseFloat(record.duration || 0);
+            totalMinutes += dur;
+            
+            const timeDone = record.end_time ? new Date(record.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
+            const imgStyle = "width: 40px; height: 40px; object-fit: cover; border-radius: 6px; margin-right: 4px; border: 1px solid #eee; vertical-align: middle;";
+
+            const row = document.createElement('tr');
+            row.style.borderBottom = "1px solid #f0f0f0";
+            row.innerHTML = `
+                <td style="padding: 12px;">
+                    <div style="font-weight: bold; color: #333;">${record.plot_name}</div>
+                    <div style="font-size: 11px; color: #999;">${record.user_email ? record.user_email.split('@')[0] : 'User'}</div>
+                </td>
+                <td style="padding: 12px; white-space: nowrap;">
+                    ${record.start_photo_url ? `<img src="${record.start_photo_url}" style="${imgStyle}" onclick="window.open(this.src)">` : ''}
+                    ${record.end_photo_url ? `<img src="${record.end_photo_url}" style="${imgStyle}" onclick="window.open(this.src)">` : ''}
+                </td>
+                <td style="padding: 12px; text-align: right;">
+                    <div style="font-weight: bold; color: #28a745;">${dur.toFixed(2)}m</div>
+                    <div style="font-size: 10px; color: #bbb;">${timeDone}</div>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    const totalEl = document.getElementById('grandTotal');
+    if (totalEl) totalEl.innerText = totalMinutes.toFixed(2) + ' min';
+}
 
 function logout() {
     const queue = JSON.parse(localStorage.getItem('pending_sync_queue') || "[]");
