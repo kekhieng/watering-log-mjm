@@ -1,3 +1,5 @@
+let isSyncing = false;
+
 // 1. SECURITY CHECK
 const currentUser = localStorage.getItem('loggedInUser');
 if (!currentUser) {
@@ -161,24 +163,31 @@ function syncPlotOptions(locId, plotId) {
 }
 
 // --- IMAGE COMPRESSION ---
+// --- BALANCED IMAGE COMPRESSION ---
 function compressImage(file, callback) {
     const reader = new FileReader();
     reader.onload = function(e) {
         const img = new Image();
         img.onload = function() {
             const canvas = document.createElement('canvas');
+            
+            // 900px is the "Goldilocks" width: Sharp but light
+            const MAX_WIDTH = 900; 
             let width = img.width;
             let height = img.height;
-            const MAX_WIDTH = 1024; 
+            
             if (width > MAX_WIDTH) {
                 height *= MAX_WIDTH / width;
                 width = MAX_WIDTH;
             }
+            
             canvas.width = width;
             canvas.height = height;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, width, height);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.4); 
+            
+            // 0.3 Quality (30%)
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.3); 
             callback(dataUrl);
         };
         img.src = e.target.result;
@@ -282,17 +291,24 @@ function reportIssue() {
 
 // --- SYNC ENGINE ---
 async function syncOfflineData() {
+    if (isSyncing) return; // EXIT if already running
+    
     let queue = JSON.parse(localStorage.getItem('pending_sync_queue') || "[]");
     if (queue.length === 0) {
         updateSyncUI(0);
         return;
     }
 
+    isSyncing = true; // LOCK the process
     updateSyncUI(queue.length);
 
     for (let i = 0; i < queue.length; i++) {
         const item = queue[i];
         try {
+            // Check if this specific item was already processed 
+            // (Safety check for very fast loops)
+            if (!item.start_time) continue; 
+
             let payload = {
                 user_email: item.user_email,
                 plot_name: item.plot_name,
@@ -317,22 +333,37 @@ async function syncOfflineData() {
                 payload.end_photo_url = _supabase.storage.from('watering-photos').getPublicUrl(ePath).data.publicUrl;
             }
 
-            const { error: dbErr } = await _supabase.from('watering_logs').insert([payload]);
-            if (dbErr) throw dbErr;
+           // ... inside your sync loop ...
+                const { error: dbErr } = await _supabase.from('watering_logs').insert([payload]);
 
-            queue.splice(i, 1);
-            localStorage.setItem('pending_sync_queue', JSON.stringify(queue));
-            i--; 
-            updateSyncUI(queue.length);
+                if (dbErr) {
+                    // 23505 is the "Duplicate" error code
+                    if (dbErr.code === '23505') {
+                        console.warn("Duplicate caught by Supabase. Removing from phone queue.");
+                        // We don't 'throw' here. We let it proceed to delete from localStorage.
+                    } else {
+                        throw dbErr; // A real error (no internet), so stop and try later
+                    }
+                }
+
+                // Proceed to delete from localStorage
+                let freshQueue = JSON.parse(localStorage.getItem('pending_sync_queue') || "[]");
+                freshQueue.shift();
+                localStorage.setItem('pending_sync_queue', JSON.stringify(freshQueue));
             
-            // Refresh table after each successful upload
+            // Sync the loop's local variables
+            queue = freshQueue;
+            i--; 
+            
+            updateSyncUI(queue.length);
             fetchLatestRecords();
 
         } catch (err) {
-            console.error("SYNC ERROR:", err.message);
-            break; 
+            console.error("Sync failed:", err.message);
+            break; // Stop and wait for the next interval
         }
     }
+    isSyncing = false; // UNLOCK when totally finished
 }
 
 // --- UI RENDERING ---
